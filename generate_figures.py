@@ -135,6 +135,16 @@ def gamblingOutcome(p):
     edge = baseEdge * chaseMult
     return -edge*G, DI
 
+def DI_CI(S, age, h, country, region):
+    """Return (DI, DI_lo, DI_hi) with 95% CI from parameter uncertainty."""
+    DI, Y, E = DI_full(S, age, h, country, region)
+    cv_E = math.sqrt(0.20**2 + 0.10**2 + 0.15**2)  # ~0.269
+    E_lo = max(E * (1 - 1.96 * cv_E), 0)
+    E_hi = min(E * (1 + 1.96 * cv_E), Y)
+    DI_hi = max(Y - E_lo, 0)
+    DI_lo = max(Y - E_hi, 0)
+    return DI, DI_lo, DI_hi
+
 def impactRate(R_in, L, k, Rmid):
     R_in = np.asarray(R_in, dtype=float)
     return L / (1 + np.exp(-k * (R_in - Rmid)))
@@ -198,27 +208,77 @@ print(f"  High-risk (R>=15%): {100*np.sum(Rv>=0.15)/len(Rv):.1f}%")
 fignum = 0
 
 # ================================================================
-# FIGURE 1 — Q1: DI vs Salary for different household sizes
+# FIGURE 1 — Q1: DI vs Salary with 95% CI bands
 # ================================================================
 fignum += 1
-print(f"Figure {fignum}: Q1 — DI vs Salary ...")
+print(f"Figure {fignum}: Q1 — DI vs Salary with 95% CI ...")
 fig, ax = plt.subplots(figsize=(9, 5.5))
 salaries = np.linspace(20000, 200000, 300)
 hh_sizes = [1, 2, 4]
 colors_q1 = ['#1f77b4', '#d62728', '#2ca02c']
 
 for j, h in enumerate(hh_sizes):
-    di_vec = np.array([DI_full(s, 35, h, 'US', 'West')[0] for s in salaries])
-    ax.plot(salaries/1000, di_vec/1000, color=colors_q1[j], linewidth=2.2,
-            label=f'Household size = {h}')
+    di_mid = np.zeros(len(salaries))
+    di_lo  = np.zeros(len(salaries))
+    di_hi  = np.zeros(len(salaries))
+    for k, s in enumerate(salaries):
+        di_mid[k], di_lo[k], di_hi[k] = DI_CI(s, 35, h, 'US', 'West')
+
+    ax.fill_between(salaries/1000, di_lo/1000, di_hi/1000,
+                    color=colors_q1[j], alpha=0.15)
+    ax.plot(salaries/1000, di_mid/1000, color=colors_q1[j], linewidth=2.2,
+            label=f'h = {h}')
 
 ax.set_xlabel('Annual Gross Salary ($k)')
 ax.set_ylabel('Disposable Income ($k)')
-ax.set_title('Q1: Disposable Income vs Salary (US West, Age 35)')
+ax.set_title('Q1: Disposable Income vs Salary with 95% CI (US West, Age 35)')
 ax.legend(framealpha=0.9)
 ax.grid(True)
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, 'Q1_DI_vs_Salary.png'), dpi=DPI)
+plt.close(fig)
+
+# ================================================================
+# FIGURE 1b — Q1: CI width across salary range (standalone)
+# ================================================================
+fignum += 1
+print(f"Figure {fignum}: Q1 — CI Width by Salary ...")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
+
+# Left: CI for US regions at h=2
+us_regions_ci = ['Northeast', 'Midwest', 'South', 'West']
+reg_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+for j, reg in enumerate(us_regions_ci):
+    mid = np.array([DI_CI(s, 35, 2, 'US', reg)[0] for s in salaries])
+    lo  = np.array([DI_CI(s, 35, 2, 'US', reg)[1] for s in salaries])
+    hi  = np.array([DI_CI(s, 35, 2, 'US', reg)[2] for s in salaries])
+    ax1.fill_between(salaries/1000, lo/1000, hi/1000, color=reg_colors[j], alpha=0.12)
+    ax1.plot(salaries/1000, mid/1000, color=reg_colors[j], linewidth=2, label=reg)
+
+ax1.set_xlabel('Annual Gross Salary ($k)')
+ax1.set_ylabel('Disposable Income ($k)')
+ax1.set_title('Q1: DI with 95% CI by US Region (h=2, age 35)')
+ax1.legend(framealpha=0.9)
+ax1.grid(True)
+
+# Right: CI for UK regions at h=2
+uk_regions_ci = ['England', 'Wales', 'Scotland', 'Northern Ireland']
+uk_colors = ['#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+for j, reg in enumerate(uk_regions_ci):
+    mid = np.array([DI_CI(s, 35, 2, 'UK', reg)[0] for s in salaries])
+    lo  = np.array([DI_CI(s, 35, 2, 'UK', reg)[1] for s in salaries])
+    hi  = np.array([DI_CI(s, 35, 2, 'UK', reg)[2] for s in salaries])
+    ax2.fill_between(salaries/1000, lo/1000, hi/1000, color=uk_colors[j], alpha=0.12)
+    ax2.plot(salaries/1000, mid/1000, color=uk_colors[j], linewidth=2, label=reg)
+
+ax2.set_xlabel('Annual Gross Salary ($k)')
+ax2.set_ylabel('Disposable Income ($k)')
+ax2.set_title('Q1: DI with 95% CI by UK Region (h=2, age 35)')
+ax2.legend(framealpha=0.9)
+ax2.grid(True)
+
+fig.tight_layout()
+fig.savefig(os.path.join(OUT, 'Q1_DI_CI_by_Region.png'), dpi=DPI)
 plt.close(fig)
 
 # ================================================================
